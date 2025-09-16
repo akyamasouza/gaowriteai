@@ -1,0 +1,117 @@
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: linear-gradient(135deg, #2b66d5 0%, #49ffbc 100%);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2rem;
+}
+
+.logo {
+    width: 4rem;
+    height: 4rem;
+    background: white;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.5rem;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+
+.logo img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
+
+.input-container {
+    display: grid;
+    grid-template-rows: 1fr auto;
+    gap: 0.75rem;
+    background: white;
+    border: none;
+    border-radius: 1rem;
+    padding: 0.75rem 1rem;
+    transition: all 0.3s ease;
+    max-width: 600px;
+    width: 90%;
+    box-shadow: 0 8px 30px rgba(0,0,0,0.12);
+}
+
+
+.prompt-input {
+    flex: 1;
+    border: none;
+    background: transparent;
+    font-family: inherit;
+    font-size: 1rem;
+    outline: none;
+    resize: none;
+    min-height: 1.5rem;
+    max-height: 12rem;
+    overflow-y: hidden;
+    padding: 0;
+    transition: height 0.2s ease;
+}
+
+.prompt-input::placeholder {
+    color: #94a3b8;
+}
+
+.input-options {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.5rem;
+}
+
+.option-btn {
+    background: none;
+    border: none;
+    color: #64748b;
+    cursor: pointer;
+    padding: 0.5rem;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+}
+
+.option-btn:hover {
+    background: #e2e8f0;
+    color: #475569;
+}
+
+.submit-btn {
+    background: linear-gradient(135deg, #2b66d5 0%, #49ffbc 100%);
+    color: white;
+    border: none;
+    padding: 0.5rem;
+    border-radius: 8px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+}
+
+.submit-btn:hover {
+    transform: scale(1.05);
+    box-shadow: 0 4px 12px rgba(43, 102, 213, 0.3);
+}
+
+.submit-btn:active {
+    transform: scale(1);
+}
