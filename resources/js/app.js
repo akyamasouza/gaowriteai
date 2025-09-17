@@ -1,21 +1,16 @@
 import './bootstrap';
 import '@fortawesome/fontawesome-free/js/all';
 
-// Auto-resize textarea
 document.addEventListener('DOMContentLoaded', function() {
     const textarea = document.querySelector('.prompt-input');
 
     if (textarea) {
-        // Auto-resize function
         function autoResize() {
             textarea.style.height = 'auto';
             textarea.style.height = textarea.scrollHeight + 'px';
         }
 
-        // Listen for input events
         textarea.addEventListener('input', autoResize);
-
-        // Initial resize
         autoResize();
     }
 
@@ -40,7 +35,7 @@ document.addEventListener('DOMContentLoaded', function() {
     function handleFileSelect(e) {
         const files = Array.from(e.target.files);
         files.forEach(addAttachment);
-        e.target.value = ''; // Reset input
+        e.target.value = '';
     }
 
     function addAttachment(file) {
@@ -106,7 +101,6 @@ document.addEventListener('DOMContentLoaded', function() {
             const message = input.value.trim();
 
             if (message || attachedFiles.length > 0) {
-                // Add user message with attachments info
                 let userMessage = message;
                 if (attachedFiles.length > 0) {
                     const fileNames = attachedFiles.map(f => f.name).join(', ');
@@ -114,21 +108,20 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
                 addMessage(userMessage, 'user');
 
-                // Clear input and attachments
                 input.value = '';
                 input.style.height = 'auto';
                 attachedFiles = [];
                 attachmentsContainer.innerHTML = '';
 
-                // Send to Ollama API
                 sendToOllama(message);
             }
         });
 
         async function sendToOllama(message) {
+            let loadingDiv;
+            
             try {
-                // Add loading message
-                const loadingDiv = addMessage('Pensando...', 'assistant');
+                loadingDiv = addMessage('Pensando...', 'assistant');
 
                 const response = await fetch('/api/chat', {
                     method: 'POST',
@@ -142,25 +135,57 @@ document.addEventListener('DOMContentLoaded', function() {
                     })
                 });
 
+                // Verifica se a resposta HTTP é válida
+                if (!response.ok) {
+                    throw new Error(`Erro HTTP: ${response.status} - ${response.statusText}`);
+                }
+
+                // Verifica o Content-Type
+                const contentType = response.headers.get('content-type');
+                if (!contentType || !contentType.includes('application/json')) {
+                    const textResponse = await response.text();
+                    console.error('Resposta não é JSON:', textResponse);
+                    throw new Error('Resposta do servidor não é JSON válida');
+                }
+
                 const data = await response.json();
 
-                // Remove loading message
-                loadingDiv.remove();
+                if (loadingDiv && loadingDiv.parentNode) {
+                    loadingDiv.remove();
+                }
 
                 if (data.success) {
-                    addMessage(data.response, 'assistant');
+                    if (data.type === 'document') {
+                        addMessage(data.message, 'assistant');
+                        // Download automático
+                        downloadDocument(data.downloadUrl);
+                    } else {
+                        addMessage(data.response, 'assistant');
+                    }
                 } else {
-                    addMessage('Erro: ' + data.error, 'assistant');
-                }
-            } catch (error) {
-                // Remove loading message if exists
-                const loadingMessages = messagesContainer.querySelectorAll('.message.assistant');
-                const lastMessage = loadingMessages[loadingMessages.length - 1];
-                if (lastMessage && lastMessage.textContent === 'Pensando...') {
-                    lastMessage.remove();
+                    const errorMessage = data.error + (data.details ? ` - ${data.details}` : '');
+                    addMessage('Erro: ' + errorMessage, 'assistant');
                 }
 
-                addMessage('Erro de conexão: ' + error.message, 'assistant');
+            } catch (error) {
+                console.error('Erro na requisição:', error);
+                
+                if (loadingDiv && loadingDiv.parentNode) {
+                    loadingDiv.remove();
+                }
+
+                let errorMessage;
+                if (error.name === 'SyntaxError') {
+                    errorMessage = 'Erro de formato na resposta do servidor';
+                } else if (error.message.includes('HTTP')) {
+                    errorMessage = `Erro de servidor: ${error.message}`;
+                } else if (error.message.includes('Failed to fetch')) {
+                    errorMessage = 'Erro de conexão com o servidor';
+                } else {
+                    errorMessage = error.message;
+                }
+
+                addMessage('Erro: ' + errorMessage, 'assistant');
             }
         }
 
@@ -172,5 +197,20 @@ document.addEventListener('DOMContentLoaded', function() {
             messagesContainer.scrollTop = messagesContainer.scrollHeight;
             return messageDiv;
         }
+
+        // Torna as funções globalmente disponíveis
+        window.downloadDocument = function(url) {
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = '';
+            link.style.display = 'none';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        };
+
+        window.previewDocument = function(url) {
+            window.open(url, '_blank');
+        };
     }
 });
