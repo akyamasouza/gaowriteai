@@ -9,6 +9,8 @@ use Illuminate\Support\Facades\Log;
 use PhpOffice\PhpWord\PhpWord;
 use PhpOffice\PhpWord\IOFactory;
 use PhpOffice\PhpWord\Shared\Html;
+use PhpOffice\PhpWord\SimpleType\Jc;
+use PhpOffice\PhpWord\Style\Table;
 
 class ChatController extends Controller
 {
@@ -72,8 +74,8 @@ class ChatController extends Controller
             $output = $data['output'] ?? 'Sem resposta do modelo';
             
             // Verifica se é uma resposta de documento
-            if (preg_match('/^"document":\s*"true",?\s*(.*)$/s', $output, $matches)) {
-                $documentContent = trim($matches[1], '"');
+            if ( isset($data['document']) && $data['document'] == "true") {
+                $documentContent = $output;
                 
                 try {
                     $documentPath = $this->generateWordDocument($documentContent);
@@ -119,11 +121,111 @@ class ChatController extends Controller
     {
         try {
             $phpWord = new PhpWord();
-            $section = $phpWord->addSection();
             
-            if (strip_tags($content) !== $content) {
-                Html::addHtml($section, $content, false, false);
+            $sectionStyle = [
+                'marginTop' => 1800,
+                'marginBottom' => 720,
+                'marginLeft' => 720,
+                'marginRight' => 720,
+                'headerHeight' => 1000,
+            ];
+            
+            $section = $phpWord->addSection($sectionStyle);
+            
+            // Adicionar cabeçalho
+            $header = $section->addHeader();
+            
+            // Criar tabela simples sem configurações complexas
+            $table = $header->addTable([
+                'borderSize' => 0,
+                'cellMargin' => 0
+            ]);
+            
+            $table->addRow(800);
+            
+            // Coluna 1 - Logo esquerda
+            $cell1 = $table->addCell(1500, ['valign' => 'center']);
+            
+            // Verificar se a imagem existe
+            $logoPath = public_path('images/rondolandia.png');
+            
+            if (file_exists($logoPath)) {
+                try {
+                    $cell1->addImage($logoPath, [
+                        'width' => 80,
+                        'height' => 80,
+                        'alignment' => Jc::CENTER
+                    ]);
+                } catch (\Exception $imgError) {
+                    Log::warning('Erro ao adicionar imagem: ' . $imgError->getMessage());
+                }
             } else {
+                Log::warning('Logo não encontrada em: ' . $logoPath);
+            }
+            
+            // Coluna 2 - Texto central
+            $cell2 = $table->addCell(6000, ['valign' => 'center']);
+            
+            // Estilos de texto
+            $titleStyle = [
+                'bold' => true,
+                'size' => 11,
+                'color' => '000000',
+                'name' => 'Arial'
+            ];
+            
+            $subtitleStyle = [
+                'bold' => false,
+                'size' => 10,
+                'color' => '000000',
+                'name' => 'Arial'
+            ];
+            
+            $centerAlignment = ['alignment' => Jc::CENTER];
+            
+            // Textos do cabeçalho
+            $cell2->addText('ESTADO DE MATO GROSSO', $titleStyle, $centerAlignment);
+            $cell2->addText('PREFEITURA MUNICIPAL DE RONDOLÂNDIA', $titleStyle, $centerAlignment);
+            $cell2->addText('CONTROLADORIA GERAL', $subtitleStyle, $centerAlignment);
+            $cell2->addText('GESTÃO 2025-2028', $subtitleStyle, $centerAlignment);
+            
+            // Coluna 3 - Logo direita
+            $cell3 = $table->addCell(1500, ['valign' => 'center']);
+            
+            if (file_exists($logoPath)) {
+                try {
+                    $cell3->addImage($logoPath, [
+                        'width' => 80,
+                        'height' => 80,
+                        'alignment' => Jc::CENTER
+                    ]);
+                } catch (\Exception $imgError) {
+                    Log::warning('Erro ao adicionar segunda imagem: ' . $imgError->getMessage());
+                }
+            }
+            
+            // Linha separadora
+            $header->addTextBreak(1);
+            
+            $lineStyle = [
+                'size' => 8,
+                'color' => '808080',
+                'name' => 'Arial'
+            ];
+            $header->addText(str_repeat('- ', 50), $lineStyle, $centerAlignment);
+            
+            // Adicionar conteúdo principal
+            if (strip_tags($content) !== $content) {
+                // Conteúdo HTML
+                try {
+                    Html::addHtml($section, $content, false, false);
+                } catch (\Exception $htmlError) {
+                    Log::warning('Erro ao processar HTML, usando texto simples: ' . $htmlError->getMessage());
+                    // Fallback para texto simples
+                    $section->addText(strip_tags($content));
+                }
+            } else {
+                // Conteúdo texto simples
                 $paragraphs = explode("\n\n", $content);
                 foreach ($paragraphs as $paragraph) {
                     if (trim($paragraph)) {
@@ -132,24 +234,40 @@ class ChatController extends Controller
                 }
             }
             
+            // Gerar arquivo
             $fileName = 'documento_' . time() . '.docx';
             $filePath = storage_path('app/public/documents/' . $fileName);
             
-            if (!file_exists(dirname($filePath))) {
-                mkdir(dirname($filePath), 0755, true);
+            // Criar diretório se não existir
+            $directory = dirname($filePath);
+            if (!file_exists($directory)) {
+                if (!mkdir($directory, 0755, true)) {
+                    throw new \Exception('Não foi possível criar o diretório: ' . $directory);
+                }
+            }
+            
+            // Verificar permissões de escrita
+            if (!is_writable($directory)) {
+                throw new \Exception('Diretório não tem permissão de escrita: ' . $directory);
             }
             
             $writer = IOFactory::createWriter($phpWord, 'Word2007');
             $writer->save($filePath);
+            
+            // Verificar se o arquivo foi criado
+            if (!file_exists($filePath)) {
+                throw new \Exception('Arquivo não foi criado: ' . $filePath);
+            }
             
             return '/storage/documents/' . $fileName;
             
         } catch (\Exception $e) {
             Log::error('Erro ao gerar documento Word', [
                 'exception' => $e->getMessage(),
-                'content' => substr($content, 0, 200)
+                'trace' => $e->getTraceAsString(),
+                'content_length' => strlen($content),
+                'content_preview' => substr($content, 0, 200)
             ]);
-            
             throw new \Exception('Erro ao gerar documento: ' . $e->getMessage());
         }
     }

@@ -23,7 +23,9 @@
         ></textarea>
         <div class="input-options">
             <input type="file" id="fileInput" accept="*/*" style="display: none;">
-            <input type="file" id="imageInput" accept="image/*" style="display: none;">
+            <button type="button" class="option-btn" title="Anexar arquivo" id="fileBtn">
+                <i class="fas fa-paperclip"></i>
+            </button>
             <button type="submit" class="submit-btn">
                 <i class="fas fa-paper-plane"></i>
             </button>
