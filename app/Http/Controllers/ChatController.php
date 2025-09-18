@@ -22,12 +22,84 @@ class ChatController extends Controller
         ]);
 
         $message = $request->input('message');
+        $files = $request->file('files');
+        
+        $filesData = [];
+        
+        $finalMessage = $message;
+        
+        if ($files && is_array($files)) {
+            foreach ($files as $index => $file) {
+                try {
+                    if (!$file->isValid()) {
+                        Log::warning("Arquivo inválido no índice {$index}");
+                        continue;
+                    }
+                    
+                    $fileName = $file->getClientOriginalName();
+                    $fileSize = $file->getSize();
+                    $mimeType = $file->getMimeType();
+                    $extension = $file->getClientOriginalExtension();
+                    
+                    $allowedTypes = [
+                        'image/jpeg', 'image/png', 'image/gif', 'image/webp',
+                        'application/pdf',
+                        'text/plain', 'text/csv',
+                        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                    ];
+                    
+                    if (!in_array($mimeType, $allowedTypes)) {
+                        Log::warning("Tipo de arquivo não permitido: {$mimeType} para arquivo {$fileName}");
+                        continue;
+                    }
+                    
+                    $fileContent = file_get_contents($file->getRealPath());
+                    $base64Content = base64_encode($fileContent);
+                    
+                    $fileData = [
+                        'name' => $fileName,
+                        'size' => $fileSize,
+                        'type' => $mimeType,
+                        'extension' => $extension,
+                        'content' => $base64Content,
+                        'content_preview' => substr($base64Content, 0, 100) . '...' // Para logs
+                    ];
+                    
+                    $filesData[] = $fileData;
+                    
+                    Log::info("Arquivo processado com sucesso", [
+                        'nome' => $fileName,
+                        'tamanho' => $fileSize,
+                        'tipo' => $mimeType,
+                        'base64_length' => strlen($base64Content)
+                    ]);
+                    
+                } catch (\Exception $e) {
+                    Log::error("Erro ao processar arquivo no índice {$index}", [
+                        'erro' => $e->getMessage(),
+                        'arquivo' => $file->getClientOriginalName() ?? 'desconhecido'
+                    ]);
+                    continue;
+                }
+            }
+        }
 
         $payload = [
             'sessionId' => '3d27af56883d480885903e52dd35d1d5',
             'action' => 'sendMessage',
-            'chatInput' => $message,
+            'chatInput' => $finalMessage,
         ];
+
+        if (!empty($filesData)) {
+            $filesSummary = "\n\n[ARQUIVOS ANEXADOS]:\n";
+            foreach ($filesData as $index => $fileData) {
+                $filesSummary .= "- Arquivo " . ($index + 1) . ": {$fileData['name']} ({$fileData['type']}, " .
+                number_format($fileData['size'] / 1024, 2) . " KB)\n";
+                $filesSummary .= " Base64: {$fileData['content']}\n\n";
+            }
+            $payload["files"] = $filesSummary;
+        }
 
         try {
             Log::info('Enviando mensagem para n8n', [
@@ -54,7 +126,6 @@ class ChatController extends Controller
                 ], $response->status());
             }
 
-            // Verifica se a resposta é JSON válida
             $responseBody = $response->body();
             $data = json_decode($responseBody, true);
             
@@ -73,7 +144,6 @@ class ChatController extends Controller
 
             $output = $data['output'] ?? 'Sem resposta do modelo';
             
-            // Verifica se é uma resposta de documento
             if ( isset($data['document']) && $data['document'] == "true") {
                 $documentContent = $output;
                 
@@ -132,10 +202,8 @@ class ChatController extends Controller
             
             $section = $phpWord->addSection($sectionStyle);
             
-            // Adicionar cabeçalho
             $header = $section->addHeader();
             
-            // Criar tabela simples sem configurações complexas
             $table = $header->addTable([
                 'borderSize' => 0,
                 'cellMargin' => 0
@@ -143,10 +211,8 @@ class ChatController extends Controller
             
             $table->addRow(800);
             
-            // Coluna 1 - Logo esquerda
             $cell1 = $table->addCell(1500, ['valign' => 'center']);
             
-            // Verificar se a imagem existe
             $logoPath = public_path('images/rondolandia.png');
             
             if (file_exists($logoPath)) {
@@ -163,10 +229,8 @@ class ChatController extends Controller
                 Log::warning('Logo não encontrada em: ' . $logoPath);
             }
             
-            // Coluna 2 - Texto central
             $cell2 = $table->addCell(6000, ['valign' => 'center']);
             
-            // Estilos de texto
             $titleStyle = [
                 'bold' => true,
                 'size' => 11,
@@ -183,13 +247,11 @@ class ChatController extends Controller
             
             $centerAlignment = ['alignment' => Jc::CENTER];
             
-            // Textos do cabeçalho
             $cell2->addText('ESTADO DE MATO GROSSO', $titleStyle, $centerAlignment);
             $cell2->addText('PREFEITURA MUNICIPAL DE RONDOLÂNDIA', $titleStyle, $centerAlignment);
             $cell2->addText('CONTROLADORIA GERAL', $subtitleStyle, $centerAlignment);
             $cell2->addText('GESTÃO 2025-2028', $subtitleStyle, $centerAlignment);
             
-            // Coluna 3 - Logo direita
             $cell3 = $table->addCell(1500, ['valign' => 'center']);
             
             if (file_exists($logoPath)) {
@@ -204,7 +266,6 @@ class ChatController extends Controller
                 }
             }
             
-            // Linha separadora
             $header->addTextBreak(1);
             
             $lineStyle = [
@@ -214,18 +275,14 @@ class ChatController extends Controller
             ];
             $header->addText(str_repeat('- ', 50), $lineStyle, $centerAlignment);
             
-            // Adicionar conteúdo principal
             if (strip_tags($content) !== $content) {
-                // Conteúdo HTML
                 try {
                     Html::addHtml($section, $content, false, false);
                 } catch (\Exception $htmlError) {
                     Log::warning('Erro ao processar HTML, usando texto simples: ' . $htmlError->getMessage());
-                    // Fallback para texto simples
                     $section->addText(strip_tags($content));
                 }
             } else {
-                // Conteúdo texto simples
                 $paragraphs = explode("\n\n", $content);
                 foreach ($paragraphs as $paragraph) {
                     if (trim($paragraph)) {
@@ -234,11 +291,9 @@ class ChatController extends Controller
                 }
             }
             
-            // Gerar arquivo
             $fileName = 'documento_' . time() . '.docx';
             $filePath = storage_path('app/public/documents/' . $fileName);
-            
-            // Criar diretório se não existir
+
             $directory = dirname($filePath);
             if (!file_exists($directory)) {
                 if (!mkdir($directory, 0755, true)) {
@@ -246,7 +301,6 @@ class ChatController extends Controller
                 }
             }
             
-            // Verificar permissões de escrita
             if (!is_writable($directory)) {
                 throw new \Exception('Diretório não tem permissão de escrita: ' . $directory);
             }
@@ -254,7 +308,6 @@ class ChatController extends Controller
             $writer = IOFactory::createWriter($phpWord, 'Word2007');
             $writer->save($filePath);
             
-            // Verificar se o arquivo foi criado
             if (!file_exists($filePath)) {
                 throw new \Exception('Arquivo não foi criado: ' . $filePath);
             }

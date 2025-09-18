@@ -110,37 +110,44 @@ document.addEventListener('DOMContentLoaded', function() {
 
                 input.value = '';
                 input.style.height = 'auto';
+                
+                // Enviar mensagem com arquivos
+                sendToOllama(message, [...attachedFiles]);
+                
+                // Limpar anexos após envio
                 attachedFiles = [];
                 attachmentsContainer.innerHTML = '';
-
-                sendToOllama(message);
             }
         });
 
-        async function sendToOllama(message) {
+        async function sendToOllama(message, files = []) {
             let loadingDiv;
             
             try {
                 loadingDiv = addMessage('Pensando...', 'assistant');
 
+                // Usar FormData para enviar arquivos
+                const formData = new FormData();
+                formData.append('message', message);
+                formData.append('model', 'gpt-oss:20b');
+                
+                // Adicionar arquivos ao FormData
+                files.forEach((file, index) => {
+                    formData.append(`files[${index}]`, file);
+                });
+
                 const response = await fetch('/api/chat', {
                     method: 'POST',
                     headers: {
-                        'Content-Type': 'application/json',
                         'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || ''
                     },
-                    body: JSON.stringify({
-                        message: message,
-                        model: 'gpt-oss:20b'
-                    })
+                    body: formData
                 });
 
-                // Verifica se a resposta HTTP é válida
                 if (!response.ok) {
                     throw new Error(`Erro HTTP: ${response.status} - ${response.statusText}`);
                 }
 
-                // Verifica o Content-Type
                 const contentType = response.headers.get('content-type');
                 if (!contentType || !contentType.includes('application/json')) {
                     const textResponse = await response.text();
@@ -157,7 +164,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (data.success) {
                     if (data.type === 'document') {
                         addMessage(data.message, 'assistant');
-                        // Download automático
                         downloadDocument(data.downloadUrl);
                     } else {
                         addMessage(data.response, 'assistant');
