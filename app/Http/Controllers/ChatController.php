@@ -11,6 +11,7 @@ use PhpOffice\PhpWord\IOFactory;
 use PhpOffice\PhpWord\Shared\Html;
 use PhpOffice\PhpWord\SimpleType\Jc;
 use PhpOffice\PhpWord\Style\Table;
+use Illuminate\Support\Str;
 
 class ChatController extends Controller
 {
@@ -54,16 +55,16 @@ class ChatController extends Controller
                         continue;
                     }
                     
-                    $fileContent = file_get_contents($file->getRealPath());
-                    $base64Content = base64_encode($fileContent);
+                    // Extrair conteúdo baseado no tipo de arquivo
+                    $extractedContent = $this->extractFileContent($file, $mimeType, $extension);
                     
                     $fileData = [
                         'name' => $fileName,
                         'size' => $fileSize,
                         'type' => $mimeType,
                         'extension' => $extension,
-                        'content' => $base64Content,
-                        'content_preview' => substr($base64Content, 0, 100) . '...' // Para logs
+                        'content' => $extractedContent,
+                        'content_preview' => substr($extractedContent, 0, 100) . '...' // Para logs
                     ];
                     
                     $filesData[] = $fileData;
@@ -72,7 +73,7 @@ class ChatController extends Controller
                         'nome' => $fileName,
                         'tamanho' => $fileSize,
                         'tipo' => $mimeType,
-                        'base64_length' => strlen($base64Content)
+                        'content_length' => strlen($extractedContent)
                     ]);
                     
                 } catch (\Exception $e) {
@@ -85,20 +86,22 @@ class ChatController extends Controller
             }
         }
 
+        $sessionId = session('chat_session_id');
+
+        if (!$sessionId) {
+            $sessionId = Str::uuid()->toString();
+            session(['chat_session_id' => $sessionId]);
+        }
+
         $payload = [
-            'sessionId' => '3d27af56883d480885903e52dd35d1d5',
+            'sessionId' => $sessionId,
             'action' => 'sendMessage',
             'chatInput' => $finalMessage,
+            'files' => []
         ];
 
         if (!empty($filesData)) {
-            $filesSummary = "\n\n[ARQUIVOS ANEXADOS]:\n";
-            foreach ($filesData as $index => $fileData) {
-                $filesSummary .= "- Arquivo " . ($index + 1) . ": {$fileData['name']} ({$fileData['type']}, " .
-                number_format($fileData['size'] / 1024, 2) . " KB)\n";
-                $filesSummary .= " Base64: {$fileData['content']}\n\n";
-            }
-            $payload["files"] = $filesSummary;
+            $payload["files"] = $fileData['content'];
         }
 
         try {
@@ -184,6 +187,175 @@ class ChatController extends Controller
                 'error' => 'Serviço indisponível',
                 'details' => $e->getMessage()
             ], 500);
+        }
+    }
+
+    /**
+     * Extrai o conteúdo de texto de diferentes tipos de arquivo
+     */
+    private function extractFileContent($file, string $mimeType, string $extension): string
+    {
+        try {
+            switch ($mimeType) {
+                case 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
+                    return $this->extractWordContent($file);
+                
+                case 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':
+                    return $this->extractExcelContent($file);
+                
+                case 'text/plain':
+                case 'text/csv':
+                    return file_get_contents($file->getRealPath());
+                
+                case 'application/pdf':
+                    return $this->extractPdfContent($file);
+                
+                case 'image/jpeg':
+                case 'image/png':
+                case 'image/gif':
+                case 'image/webp':
+                    // Para imagens, retorna informações básicas ou Base64 se necessário
+                    $fileContent = file_get_contents($file->getRealPath());
+                    return base64_encode($fileContent);
+                
+                default:
+                    Log::warning("Tipo de arquivo não suportado para extração de texto: {$mimeType}");
+                    return "Conteúdo do arquivo não pode ser extraído como texto.";
+            }
+        } catch (\Exception $e) {
+            Log::error("Erro ao extrair conteúdo do arquivo", [
+                'mimeType' => $mimeType,
+                'error' => $e->getMessage()
+            ]);
+            return "Erro ao extrair conteúdo do arquivo: " . $e->getMessage();
+        }
+    }
+
+    /**
+     * Extrai texto de documentos Word (.docx)
+     */
+    private function extractWordContent($file): string
+    {
+        try {
+            $filePath = $file->getRealPath();
+            $phpWord = IOFactory::load($filePath);
+            
+            $textContent = '';
+            
+            foreach ($phpWord->getSections() as $section) {
+                foreach ($section->getElements() as $element) {
+                    if (method_exists($element, 'getText')) {
+                        $textContent .= $element->getText();
+                    } elseif (method_exists($element, 'getElements')) {
+                        // Para elementos como tabelas, cabeçalhos, etc.
+                        $textContent .= $this->extractElementText($element);
+                    }
+                }
+            }
+            
+            return trim($textContent);
+        } catch (\Exception $e) {
+            Log::error("Erro ao extrair texto do Word", ['error' => $e->getMessage()]);
+            throw new \Exception("Não foi possível extrair o texto do documento Word: " . $e->getMessage());
+        }
+    }
+
+    /**
+     * Extrai texto de elementos aninhados (como tabelas)
+     */
+    private function extractElementText($element): string
+    {
+        $text = '';
+    
+        if (method_exists($element, 'getElements')) {
+            foreach ($element->getElements() as $child) {
+                if (method_exists($child, 'getText')) {
+                    $text .= $child->getText();
+                } elseif (method_exists($child, 'getElements')) {
+                    $text .= $this->extractElementText($child);
+                }
+    
+                // Adiciona quebra de linha entre parágrafos
+                if ($child instanceof \PhpOffice\PhpWord\Element\TextRun) {
+                    $text .= "\n";
+                } elseif ($child instanceof \PhpOffice\PhpWord\Element\TextBreak) {
+                    $text .= "\n";
+                }
+            }
+        }
+    
+        // Quebra de linha ao final de cada elemento de nível superior
+        $text .= "\n";
+    
+        return $text;
+    }    
+
+    /**
+     * Extrai texto de planilhas Excel (.xlsx)
+     */
+    private function extractExcelContent($file): string
+    {
+        try {
+            // Você precisará instalar PhpSpreadsheet para isso
+            // composer require phpoffice/phpspreadsheet
+            
+            if (!class_exists('\PhpOffice\PhpSpreadsheet\IOFactory')) {
+                return "PhpSpreadsheet não está instalado. Instale com: composer require phpoffice/phpspreadsheet";
+            }
+            
+            $filePath = $file->getRealPath();
+            $spreadsheet = \PhpOffice\PhpSpreadsheet\IOFactory::load($filePath);
+            
+            $textContent = '';
+            
+            foreach ($spreadsheet->getAllSheets() as $sheet) {
+                $textContent .= "=== Planilha: " . $sheet->getTitle() . " ===\n";
+                
+                $highestRow = $sheet->getHighestRow();
+                $highestColumn = $sheet->getHighestColumn();
+                
+                for ($row = 1; $row <= $highestRow; $row++) {
+                    $rowData = [];
+                    for ($col = 'A'; $col <= $highestColumn; $col++) {
+                        $cellValue = $sheet->getCell($col . $row)->getCalculatedValue();
+                        if (!empty($cellValue)) {
+                            $rowData[] = $cellValue;
+                        }
+                    }
+                    if (!empty($rowData)) {
+                        $textContent .= implode("\t", $rowData) . "\n";
+                    }
+                }
+                $textContent .= "\n";
+            }
+            
+            return trim($textContent);
+        } catch (\Exception $e) {
+            Log::error("Erro ao extrair texto do Excel", ['error' => $e->getMessage()]);
+            return "Erro ao extrair conteúdo do Excel: " . $e->getMessage();
+        }
+    }
+
+    /**
+     * Extrai texto de PDFs
+     */
+    private function extractPdfContent($file): string
+    {
+        try {
+            // Para PDF, você pode usar smalot/pdfparser
+            // composer require smalot/pdfparser
+            
+            if (!class_exists('\Smalot\PdfParser\Parser')) {
+                return "PdfParser não está instalado. Instale com: composer require smalot/pdfparser";
+            }
+            
+            $parser = new \Smalot\PdfParser\Parser();
+            $pdf = $parser->parseFile($file->getRealPath());
+            
+            return $pdf->getText();
+        } catch (\Exception $e) {
+            Log::error("Erro ao extrair texto do PDF", ['error' => $e->getMessage()]);
+            return "Erro ao extrair conteúdo do PDF: " . $e->getMessage();
         }
     }
 
