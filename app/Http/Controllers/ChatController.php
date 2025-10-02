@@ -86,12 +86,7 @@ class ChatController extends Controller
             }
         }
 
-        $sessionId = session('chat_session_id');
-
-        if (!$sessionId) {
-            $sessionId = Str::uuid()->toString();
-            session(['chat_session_id' => $sessionId]);
-        }
+        $sessionId = $request->input('chatSessionId') ?? Str::uuid()->toString();
 
         $payload = [
             'sessionId' => $sessionId,
@@ -106,12 +101,12 @@ class ChatController extends Controller
 
         try {
             Log::info('Enviando mensagem para n8n', [
-                'url' => 'https://n8n.atoon.site/webhook/30e4ee4f-d50b-4646-b3ab-dc5c666cc532/chat',
+                'url' => 'https://webhookn8n.gaotech.com.br/webhook/30e4ee4f-d50b-4646-b3ab-dc5c666cc532/chat',
                 'payload' => $payload
             ]);
 
-            $response = Http::timeout(60)->post(
-                'https://n8n.atoon.site/webhook/30e4ee4f-d50b-4646-b3ab-dc5c666cc532/chat',
+            $response = Http::timeout(520)->post(
+                'https://webhookn8n.gaotech.com.br/webhook/30e4ee4f-d50b-4646-b3ab-dc5c666cc532/chat',
                 $payload
             );
 

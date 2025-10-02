@@ -3,6 +3,12 @@ import '@fortawesome/fontawesome-free/js/all';
 
 document.addEventListener('DOMContentLoaded', function() {
     const textarea = document.querySelector('.prompt-input');
+        // logo no início do seu JS
+    let chatSessionId = localStorage.getItem('chatSessionId');
+    if (!chatSessionId) {
+        chatSessionId = crypto.randomUUID();
+        localStorage.setItem('chatSessionId', chatSessionId);
+    }
 
     if (textarea) {
         function autoResize() {
@@ -130,6 +136,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 const formData = new FormData();
                 formData.append('message', message);
                 formData.append('model', 'gpt-oss:20b');
+                // no envio da mensagem
+                formData.append('chatSessionId', chatSessionId);
+
                 
                 // Adicionar arquivos ao FormData
                 files.forEach((file, index) => {
@@ -141,7 +150,8 @@ document.addEventListener('DOMContentLoaded', function() {
                     headers: {
                         'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || ''
                     },
-                    body: formData
+                    body: formData,
+                    credentials: 'include'
                 });
 
                 if (!response.ok) {
